@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Section C のドラムパターンを再生・編集できるドラム練習用ページ。Web Audioで音を合成するのでオフラインでも動きます。">
+<meta name="theme-color" content="#13151a">
+<title>ドラムパターン再現 — Section C</title>
+<style>
+  :root{
+    --bg:#13151a; --panel:#1b1f27; --panel2:#232833; --line:#2f3642;
+    --txt:#e9ecf1; --dim:#8c95a5; --accent:#f0a33c;
+    --hh:#63c7f5; --sn:#ffd166; --bd:#f0736e; --cr:#c58bff;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:28px 20px 60px;
+    background:radial-gradient(1200px 600px at 50% -10%,#1d222c 0%,var(--bg) 60%);
+    color:var(--txt);
+    font-family:-apple-system,"Segoe UI","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  }
+  .wrap{max-width:1060px;margin:0 auto}
+  h1{font-size:19px;margin:0 0 4px;letter-spacing:.02em}
+  .sub{color:var(--dim);font-size:13px;margin:0 0 24px}
+  .sub b{color:var(--accent);font-weight:600}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:18px}
+
+  .controls{display:flex;flex-wrap:wrap;gap:22px;align-items:center}
+  button{
+    font:inherit;font-weight:600;color:#14161a;background:var(--accent);
+    border:0;border-radius:9px;padding:11px 24px;cursor:pointer;transition:.15s;
+  }
+  button:hover{filter:brightness(1.1)}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:500;padding:10px 16px}
+  button.ghost:hover{color:var(--txt);border-color:var(--dim)}
+  .field{display:flex;flex-direction:column;gap:5px;min-width:150px}
+  .field label{font-size:11px;color:var(--dim);letter-spacing:.06em}
+  .field .val{color:var(--txt);font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer}
+
+  .gridscroll{overflow-x:auto;padding-bottom:6px}
+  .grid{display:grid;grid-template-columns:76px repeat(32,1fr);gap:3px;min-width:980px}
+  .lab{display:flex;align-items:center;font-size:12px;color:var(--dim);letter-spacing:.04em}
+  .tick{text-align:center;font-size:10px;color:#5d6675;font-family:ui-monospace,Menlo,Consolas,monospace;padding-bottom:4px}
+  .tick.beat{color:var(--txt);font-weight:700}
+  .cell{
+    height:30px;border-radius:6px;background:var(--panel2);border:1px solid transparent;
+    display:flex;align-items:center;justify-content:center;
+    font-size:13px;font-weight:700;color:#14161a;cursor:pointer;user-select:none;
+    transition:background .12s,transform .06s;
+  }
+  .cell:hover{border-color:#49536a}
+  .cell.beat{background:#282e3a}
+  .cell.on-hh{background:var(--hh)}
+  .cell.on-open{background:var(--hh);box-shadow:inset 0 0 0 3px #1b1f27}
+  .cell.on-crash{background:var(--cr)}
+  .cell.on-sn{background:var(--sn)}
+  .cell.on-ghost{background:#6b6038;color:var(--sn)}
+  .cell.on-bd{background:var(--bd)}
+  .cell.now{outline:2px solid var(--accent);outline-offset:1px}
+  .cell.flash{transform:scale(1.18)}
+  .barsep{box-shadow:inset 3px 0 0 #4b556b}
+
+  .legend{display:flex;flex-wrap:wrap;gap:18px;color:var(--dim);font-size:12px;margin-top:16px;line-height:1.6}
+  .legend span b{color:var(--txt)}
+  .swatch{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px}
+
+  .notes{color:var(--dim);font-size:13px;line-height:1.85}
+  .notes h2{font-size:14px;color:var(--txt);margin:0 0 10px;letter-spacing:.04em}
+  .notes b{color:var(--txt);font-weight:600}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11px;color:var(--txt)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>ドラムパターン再現 <span style="color:var(--dim);font-weight:400">— Section <b style="color:var(--accent)">C</b></span></h1>
+  <p class="sub">4分ハイハット＋2・4バックビート。<b>2拍目でハイハットをオープン</b>、16分の「ア」でゴーストノート。</p>
+
+  <div class="panel">
+    <div class="controls">
+      <button id="play">▶ 再生</button>
+      <div class="field">
+        <label>テンポ <span class="val" id="bpmVal">92</span> BPM</label>
+        <input type="range" id="bpm" min="50" max="180" value="92">
+      </div>
+      <div class="field">
+        <label>ハネ（シャッフル） <span class="val" id="swVal">0</span>%</label>
+        <input type="range" id="swing" min="0" max="60" value="0">
+      </div>
+      <div class="field">
+        <label>音量 <span class="val" id="volVal">70</span>%</label>
+        <input type="range" id="vol" min="0" max="100" value="70">
+      </div>
+      <button class="ghost" id="reset">元のパターンに戻す</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="gridscroll"><div class="grid" id="grid"></div></div>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--cr)"></i><b>⊗</b> クラッシュ（アクセント）</span>
+      <span><i class="swatch" style="background:var(--hh)"></i><b>x</b> ハイハット・クローズ</span>
+      <span><i class="swatch" style="background:var(--hh);box-shadow:inset 0 0 0 3px #1b1f27"></i><b>o</b> ハイハット・オープン</span>
+      <span><i class="swatch" style="background:var(--sn)"></i><b>●</b> スネア</span>
+      <span><i class="swatch" style="background:#6b6038"></i><b>g</b> ゴーストノート</span>
+      <span><i class="swatch" style="background:var(--bd)"></i><b>●</b> バスドラム</span>
+    </div>
+  </div>
+
+  <div class="panel notes">
+    <h2>叩き方のポイント</h2>
+    <b>1小節目の頭</b>はクラッシュ＋バスドラ。セクションの入りなのでしっかりアクセントを。<br>
+    <b>2拍目</b>が肝。足でハイハットを開けながらスネアと同時にヒットし、開けっぱなしのまま16分の「ア」で小さくゴーストノート、<b>3拍目で閉じる</b>。この流れがこのビートのノリを作っています。<br>
+    <b>バスドラ</b>は「1・1と」「3・3と」の8分2連（1小節目の頭だけクラッシュと一緒に4分）。<br>
+    <b>ゴーストは「スティックを落とすだけ」</b>の音量で。2拍目のスネアと同じ強さにならないように。<br>
+    <br>
+    セルをクリックすると音を切り替えられます（ハイハット列は x → o → ⊗ → 消す の順で循環）。<kbd>Space</kbd> で再生／停止。
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const TOTAL = 32; // 16分 × 2小節
+
+  // hh: 0=なし 1=クローズ 2=オープン 3=クラッシュ  /  sn: 0=なし 1=スネア 2=ゴースト  /  bd: 0/1
+  const INITIAL = {
+    hh: [3,0,0,0, 2,0,0,0, 1,0,0,0, 1,0,0,0,  1,0,0,0, 2,0,0,0, 1,0,0,0, 1,0,0,0],
+    sn: [0,0,0,0, 1,0,0,2, 0,0,0,0, 1,0,0,0,  0,0,0,0, 1,0,0,2, 0,0,0,0, 1,0,0,0],
+    bd: [1,0,0,0, 0,0,0,0, 1,0,1,0, 0,0,0,0,  1,0,1,0, 0,0,0,0, 1,0,1,0, 0,0,0,0]
+  };
+  const pattern = { hh:INITIAL.hh.slice(), sn:INITIAL.sn.slice(), bd:INITIAL.bd.slice() };
+
+  /* ---------- 音源（Web Audio で合成） ---------- */
+  let ctx = null, master = null, noiseBuf = null, openHat = null;
+
+  function initAudio(){
+    if(ctx) return;
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    master = ctx.createGain();
+    master.gain.value = volEl.value/100;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.ratio.value = 4;
+    master.connect(comp); comp.connect(ctx.destination);
+    const len = ctx.sampleRate * 2;
+    noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i] = Math.random()*2-1;
+  }
+  function noiseSource(rate){
+    const n = ctx.createBufferSource();
+    n.buffer = noiseBuf;
+    n.playbackRate.value = rate || 1;
+    return n;
+  }
+  function env(g, t, peak, attack, decay){
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+  }
+
+  function kick(t){
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(165, t);
+    o.frequency.exponentialRampToValueAtTime(44, t + 0.13);
+    env(g, t, 1.05, 0.005, 0.42);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + 0.46);
+    const n = noiseSource(1), hp = ctx.createBiquadFilter(), ng = ctx.createGain();
+    hp.type='highpass'; hp.frequency.value = 2600;
+    env(ng, t, 0.22, 0.002, 0.03);
+    n.connect(hp); hp.connect(ng); ng.connect(master);
+    n.start(t); n.stop(t + 0.06);
+  }
+
+  function snare(t, ghost){
+    const v = ghost ? 0.2 : 1, dec = ghost ? 0.07 : 0.19;
+    const n = noiseSource(1), hp = ctx.createBiquadFilter(),
+          pk = ctx.createBiquadFilter(), g = ctx.createGain();
+    hp.type='highpass'; hp.frequency.value = ghost ? 1900 : 1350;
+    pk.type='peaking';  pk.frequency.value = 4200; pk.gain.value = 4;
+    env(g, t, 0.78*v, 0.003, dec);
+    n.connect(hp); hp.connect(pk); pk.connect(g); g.connect(master);
+    n.start(t); n.stop(t + dec + 0.05);
+    const o = ctx.createOscillator(), og = ctx.createGain();
+    o.type='triangle';
+    o.frequency.setValueAtTime(ghost ? 215 : 195, t);
+    o.frequency.exponentialRampToValueAtTime(140, t + 0.1);
+    env(og, t, 0.42*v, 0.004, ghost ? 0.05 : 0.12);
+    o.connect(og); og.connect(master);
+    o.start(t); o.stop(t + 0.2);
+  }
+
+  function chokeOpen(t){
+    if(openHat){
+      try{
+        openHat.gain.cancelScheduledValues(t);
+        openHat.gain.setTargetAtTime(0.0001, t, 0.006);
+      }catch(e){}
+      openHat = null;
+    }
+  }
+
+  function hat(t, open){
+    chokeOpen(t);
+    const dec = open ? 0.45 : 0.055, amp = open ? 0.46 : 0.33;
+    const n = noiseSource(1.4), hp = ctx.createBiquadFilter(),
+          bp = ctx.createBiquadFilter(), g = ctx.createGain();
+    hp.type='highpass'; hp.frequency.value = 7000;
+    bp.type='bandpass'; bp.frequency.value = 11000; bp.Q.value = 0.8;
+    env(g, t, amp, 0.002, dec);
+    n.connect(hp); hp.connect(bp); bp.connect(g); g.connect(master);
+    n.start(t); n.stop(t + dec + 0.1);
+    if(open) openHat = g;
+  }
+
+  function crash(t){
+    chokeOpen(t);
+    const n = noiseSource(0.9), hp = ctx.createBiquadFilter(), g = ctx.createGain();
+    hp.type='highpass'; hp.frequency.value = 3200;
+    env(g, t, 0.72, 0.004, 1.8);
+    n.connect(hp); hp.connect(g); g.connect(master);
+    n.start(t); n.stop(t + 1.9);
+    const n2 = noiseSource(0.7), bp = ctx.createBiquadFilter(), g2 = ctx.createGain();
+    bp.type='bandpass'; bp.frequency.value = 900; bp.Q.value = 1.1;
+    env(g2, t, 0.22, 0.01, 1.2);
+    n2.connect(bp); bp.connect(g2); g2.connect(master);
+    n2.start(t); n2.stop(t + 1.3);
+  }
+
+  function playStep(step, t){
+    const h = pattern.hh[step];
+    if(h === 1) hat(t, false);
+    else if(h === 2) hat(t, true);
+    else if(h === 3) crash(t);
+    const s = pattern.sn[step];
+    if(s === 1) snare(t, false);
+    else if(s === 2) snare(t, true);
+    if(pattern.bd[step]) kick(t);
+  }
+
+  /* ---------- 画面（グリッド） ---------- */
+  const gridEl = document.getElementById('grid');
+  const ROWS = [
+    {key:'hh', label:'HH / Cym', cycle:[0,1,2,3]},
+    {key:'sn', label:'スネア',   cycle:[0,1,2]},
+    {key:'bd', label:'バスドラ', cycle:[0,1]}
+  ];
+  const TICKS = ['1','e','&','a'];
+  const cells = {hh:[], sn:[], bd:[]};
+
+  function buildGrid(){
+    gridEl.innerHTML = '';
+    const corner = document.createElement('div');
+    corner.className = 'lab';
+    gridEl.appendChild(corner);
+    for(let i=0;i<TOTAL;i++){
+      const t = document.createElement('div');
+      const beat = Math.floor((i%16)/4) + 1;
+      t.className = 'tick' + (i%4===0 ? ' beat' : '');
+      t.textContent = i%4===0 ? String(beat) : TICKS[i%4];
+      gridEl.appendChild(t);
+    }
+    ROWS.forEach(function(row){
+      const lab = document.createElement('div');
+      lab.className = 'lab';
+      lab.textContent = row.label;
+      gridEl.appendChild(lab);
+      for(let i=0;i<TOTAL;i++){
+        const c = document.createElement('div');
+        c.className = 'cell';
+        if(i === 16) c.classList.add('barsep');
+        c.addEventListener('click', function(){
+          const cyc = row.cycle;
+          const idx = cyc.indexOf(pattern[row.key][i]);
+          pattern[row.key][i] = cyc[(idx + 1) % cyc.length];
+          paint(row.key, i);
+          if(ctx && pattern[row.key][i]) previewHit(row.key, pattern[row.key][i]);
+        });
+        cells[row.key].push(c);
+        gridEl.appendChild(c);
+      }
+    });
+    paintAll();
+  }
+
+  function previewHit(key, val){
+    const t = ctx.currentTime + 0.01;
+    if(key === 'hh'){ val === 3 ? crash(t) : hat(t, val === 2); }
+    else if(key === 'sn'){ snare(t, val === 2); }
+    else kick(t);
+  }
+
+  function paint(key, i){
+    const c = cells[key][i], v = pattern[key][i];
+    c.className = 'cell' + (i === 16 ? ' barsep' : '') + (i%4 === 0 ? ' beat' : '');
+    c.textContent = '';
+    if(key === 'hh'){
+      if(v === 1){ c.classList.add('on-hh');    c.textContent = 'x'; }
+      if(v === 2){ c.classList.add('on-open');  c.textContent = 'o'; }
+      if(v === 3){ c.classList.add('on-crash'); c.textContent = '⊗'; }
+    }else if(key === 'sn'){
+      if(v === 1){ c.classList.add('on-sn');    c.textContent = '●'; }
+      if(v === 2){ c.classList.add('on-ghost'); c.textContent = 'g'; }
+    }else{
+      if(v === 1){ c.classList.add('on-bd');    c.textContent = '●'; }
+    }
+  }
+  function paintAll(){
+    ROWS.forEach(function(r){ for(let i=0;i<TOTAL;i++) paint(r.key, i); });
+  }
+
+  /* ---------- トランスポート ---------- */
+  const playEl = document.getElementById('play');
+  const bpmEl  = document.getElementById('bpm');
+  const swEl   = document.getElementById('swing');
+  const volEl  = document.getElementById('vol');
+
+  let isPlaying = false, timer = null, step = 0, nextTime = 0, lastDrawn = -1;
+  let queue = [];
+
+  function stepDur(){ return 60 / Number(bpmEl.value) / 4; }
+
+  function scheduler(){
+    const ahead = 0.12;
+    while(nextTime < ctx.currentTime + ahead){
+      const off = (step % 2 === 1) ? (Number(swEl.value)/100) * stepDur() : 0;
+      const t = nextTime + off;
+      playStep(step, t);
+      queue.push({step:step, time:t});
+      nextTime += stepDur();
+      step = (step + 1) % TOTAL;
+    }
+  }
+
+  function draw(){
+    if(!isPlaying) return;
+    let cur = lastDrawn;
+    while(queue.length && queue[0].time <= ctx.currentTime) cur = queue.shift().step;
+    if(cur !== lastDrawn){
+      highlight(cur);
+      lastDrawn = cur;
+    }
+    requestAnimationFrame(draw);
+  }
+
+  function highlight(i){
+    ROWS.forEach(function(r){
+      cells[r.key].forEach(function(c){ c.classList.remove('now','flash'); });
+      const c = cells[r.key][i];
+      c.classList.add('now');
+      if(pattern[r.key][i]) c.classList.add('flash');
+    });
+  }
+  function clearHighlight(){
+    ROWS.forEach(function(r){
+      cells[r.key].forEach(function(c){ c.classList.remove('now','flash'); });
+    });
+  }
+
+  function start(){
+    initAudio();
+    if(ctx.state === 'suspended') ctx.resume();
+    isPlaying = true;
+    step = 0; lastDrawn = -1; queue = [];
+    nextTime = ctx.currentTime + 0.12;
+    timer = setInterval(scheduler, 25);
+    requestAnimationFrame(draw);
+    playEl.textContent = '■ 停止';
+  }
+  function stop(){
+    isPlaying = false;
+    clearInterval(timer);
+    if(ctx) chokeOpen(ctx.currentTime);
+    queue = [];
+    clearHighlight();
+    playEl.textContent = '▶ 再生';
+  }
+
+  playEl.addEventListener('click', function(){ isPlaying ? stop() : start(); });
+
+  document.getElementById('reset').addEventListener('click', function(){
+    pattern.hh = INITIAL.hh.slice();
+    pattern.sn = INITIAL.sn.slice();
+    pattern.bd = INITIAL.bd.slice();
+    paintAll();
+  });
+
+  bpmEl.addEventListener('input', function(){ document.getElementById('bpmVal').textContent = bpmEl.value; });
+  swEl .addEventListener('input', function(){ document.getElementById('swVal').textContent  = swEl.value;  });
+  volEl.addEventListener('input', function(){
+    document.getElementById('volVal').textContent = volEl.value;
+    if(master) master.gain.setTargetAtTime(volEl.value/100, ctx.currentTime, 0.01);
+  });
+
+  document.addEventListener('keydown', function(e){
+    if(e.code === 'Space' && e.target === document.body){
+      e.preventDefault();
+      isPlaying ? stop() : start();
+    }
+  });
+
+  buildGrid();
+})();
+</script>
+</body>
+</html>
